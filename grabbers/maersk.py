@@ -38,8 +38,13 @@ class MaerskGrabber(BaseGrabber):
 
     async def fetch(self) -> dict:
         import nodriver as uc
+            # 本地快捷函数，避免每次都写 if self.on_status
+        def s(msg):
+            if self.on_status:
+                self.on_status(msg)
 
         url     = TRACKING_URL.format(no=self.container_no)
+        s('⟳ 正在启动浏览器...')
         browser = await uc.start(
             headless=False,
             browser_args=[
@@ -48,8 +53,11 @@ class MaerskGrabber(BaseGrabber):
             ]
         )
         try:
+            s('⟳ 正在打开 Maersk 追踪页...')
             tab = await browser.get(url)
+            s('⟳ 等待页面渲染（约10秒）...')
             await tab.sleep(WAIT_SECONDS)
+            s('⟳ 正在提取运踪数据...')
             raw  = await tab.evaluate(_JS)
             data = self._parse_nodriver(raw)
 

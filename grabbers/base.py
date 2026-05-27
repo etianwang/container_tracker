@@ -31,7 +31,8 @@ class BaseGrabber(ABC):
 
     def __init__(self, container_no: str):
         self.container_no = container_no.upper().strip()
-
+        self.on_status = None  # 进度回调，由 FetchWorker 注入
+        
     @abstractmethod
     async def fetch(self) -> dict:
         """

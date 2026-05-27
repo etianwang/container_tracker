@@ -140,6 +140,7 @@ class FetchWorker(QThread):
             return
 
         grabber = get_grabber(grabber_name, self.no)
+        grabber.on_status = lambda msg: self.status.emit(msg)  # 注入状态回调
         if not grabber:
             self.error.emit(f'{grabber_name} 抓取器尚未实现\n可在 grabbers/{grabber_name}.py 中添加。')
             return
