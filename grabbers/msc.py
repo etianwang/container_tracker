@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 from .base import BaseGrabber
 
 TRACKING_URL = 'https://www.msc.com/en/track-a-shipment?agencyPath=civ'
@@ -26,7 +27,7 @@ class MscGrabber(BaseGrabber):
 
     async def fetch(self) -> dict:
         import nodriver as uc
-        browser = await uc.start(headless=False, browser_args=['--window-size=400,300', '--window-position=99999,99999'])
+        browser = await uc.start(headless=os.environ.get('TRACKER_HEADLESS') == '1', browser_args=['--window-size=400,300', '--window-position=99999,99999'])
         try:
             tab = await browser.get(TRACKING_URL)
             await self._wait_for(tab, '#trackingNumber')

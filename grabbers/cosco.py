@@ -1,6 +1,7 @@
 """COSCO Shipping 公共货物追踪页面抓取器。"""
 
 import json
+import os
 
 from .base import BaseGrabber
 
@@ -19,7 +20,7 @@ class CoscoGrabber(BaseGrabber):
     async def fetch(self) -> dict:
         import nodriver as uc
 
-        browser = await uc.start(headless=False, browser_args=['--window-size=400,300', '--window-position=99999,99999'])
+        browser = await uc.start(headless=os.environ.get('TRACKER_HEADLESS') == '1', browser_args=['--window-size=400,300', '--window-position=99999,99999'])
         try:
             tab = await browser.get(TRACKING_URL.format(no=self.container_no))
             await self._wait_for(tab, 'tbody.ant-table-tbody tr')

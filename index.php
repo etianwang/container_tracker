@@ -52,6 +52,11 @@ function history(): array {
     return db()->query('SELECT id, container, carrier, time, note FROM history ORDER BY time DESC LIMIT ' . MAX_HISTORY)->fetchAll(PDO::FETCH_ASSOC);
 }
 
+function python_bin(): string {
+    if (PHP_OS_FAMILY === 'Windows') return 'py -3.12';
+    return escapeshellcmd(getenv('TRACKER_PYTHON') ?: 'python3.12');
+}
+
 function queue_job(string $container, string $carrier, string $carrier_name, array $candidates): string {
     $db = db(); $db->exec('BEGIN IMMEDIATE');
     $active = $db->prepare("SELECT id FROM jobs WHERE container=? AND carrier=? AND status IN ('queued', 'running') ORDER BY created_at DESC LIMIT 1");
@@ -60,8 +65,13 @@ function queue_job(string $container, string $carrier, string $carrier_name, arr
     $id = bin2hex(random_bytes(12));
     $db->prepare('INSERT INTO jobs (id, container, carrier, carrier_name, candidates, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')->execute([$id, $container, $carrier, $carrier_name, json_encode($candidates), 'queued', time()]);
     $db->commit();
-    $command = 'start "" /b py -3.12 ' . escapeshellarg(__DIR__ . '/tracker_worker.py') . ' ' . escapeshellarg(DB_FILE) . ' ' . escapeshellarg($id) . ' >NUL 2>NUL';
-    pclose(popen('cmd /c ' . $command, 'r'));
+    if (PHP_OS_FAMILY === 'Windows') {
+        $command = 'start "" /b ' . python_bin() . ' ' . escapeshellarg(__DIR__ . '/tracker_worker.py') . ' ' . escapeshellarg(DB_FILE) . ' ' . escapeshellarg($id) . ' >NUL 2>NUL';
+        pclose(popen('cmd /c ' . $command, 'r'));
+    } else {
+        $command = python_bin() . ' ' . escapeshellarg(__DIR__ . '/tracker_worker.py') . ' ' . escapeshellarg(DB_FILE) . ' ' . escapeshellarg($id) . ' >/dev/null 2>&1 &';
+        exec($command);
+    }
     return $id;
 }
 
@@ -103,7 +113,7 @@ function tracker_result(string $container, string $carrier): array {
         $cached = json_decode($cached, true);
         if (is_array($cached)) return $cached + ['cached' => true];
     }
-    $command = 'py -3.12 ' . escapeshellarg(__DIR__ . '/tracker_cli.py') . ' '
+    $command = python_bin() . ' ' . escapeshellarg(__DIR__ . '/tracker_cli.py') . ' '
         . escapeshellarg($container) . ' ' . escapeshellarg($carrier);
     $output = shell_exec($command) ?? '';
     if (!preg_match('/^TRACKER_JSON=(.+)$/m', $output, $match)) {

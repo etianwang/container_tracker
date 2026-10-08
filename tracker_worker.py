@@ -44,7 +44,8 @@ def main(db_path, job_id):
                 break
             command = [sys.executable, str(Path(__file__).with_name('tracker_cli.py')), row[0], carrier]
             completed = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=25,
-                                       env={**__import__('os').environ, 'TRACKER_TIMEOUT_SECONDS': '22'})
+                                       env={**__import__('os').environ, 'TRACKER_TIMEOUT_SECONDS': '22',
+                                            'TRACKER_HEADLESS': '1' if sys.platform != 'win32' else '0'})
             stderr += completed.stderr
             line = next((line[13:] for line in completed.stdout.splitlines() if line.startswith('TRACKER_JSON=')), '')
             payload = json.loads(line) if line else {'ok': False}

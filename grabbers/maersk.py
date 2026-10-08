@@ -8,6 +8,7 @@ Maersk Line 抓取器
 
 import asyncio
 import json
+import os
 from .base import BaseGrabber
 
 TRACKING_URL = 'https://www.maersk.com/tracking/{no}'
@@ -51,7 +52,7 @@ class MaerskGrabber(BaseGrabber):
         url     = TRACKING_URL.format(no=self.container_no)
         s('⟳ 正在启动浏览器...')
         browser = await uc.start(
-            headless=False,
+            headless=os.environ.get('TRACKER_HEADLESS') == '1',
             browser_args=[
                 '--window-size=400,300',
                 '--window-position=99999,99999',  # 移到屏幕外不可见处
