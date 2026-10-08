@@ -1,30 +1,50 @@
-"""
-MSC Mediterranean Shipping 抓取器
-适用前缀: MSCU MEDU
-
-TODO: 实现抓取逻辑
-MSC 官网有 CSRF 保护，需分析实际请求。
-临时方案：返回提示信息，引导用户跳转官网。
-"""
+"""MSC Mediterranean Shipping 官网查询抓取器。"""
 
 import asyncio
+import json
 from .base import BaseGrabber
 
-TRACKING_URL = 'https://www.msc.com/en/track-a-shipment?agencyPath=civ&trackingNumber={no}'
+TRACKING_URL = 'https://www.msc.com/en/track-a-shipment?agencyPath=civ'
+
+_JS = r'''JSON.stringify((() => {
+    const clean = value => (value || '').trim();
+    const lines = value => clean(value).split('\\n').map(clean).filter(Boolean);
+    const detail = lines(document.querySelector('.msc-flow-tracking__details')?.innerText);
+    const field = name => detail[detail.indexOf(name) + 1] || '';
+    const cells = Array.from(document.querySelectorAll('.msc-flow-tracking__tracking .msc-flow-tracking__cell')).map(row => clean(row.innerText)).filter(Boolean);
+    const events = [];
+    for (let i = 0; i + 2 < cells.length; i++) if (/^\d{2}\/\d{2}\/\d{4}$/.test(cells[i])) events.push({loc: cells[i + 1], milestone: cells[i + 2] + '\\n' + cells[i]});
+    const summary = lines(document.querySelector('.msc-flow-tracking__container')?.innerText);
+    const latest = summary[summary.indexOf('Latest move') + 1] || '';
+    return {container: field('Container Number'), carrier: 'MSC', from_port: field('Shipped From'), to_port: field('Shipped To'), status: latest ? 'Latest move · ' + latest : '', updated: '', events};
+})())'''
 
 
 class MscGrabber(BaseGrabber):
-    NAME     = 'msc'
+    NAME = 'msc'
     CARRIERS = ['MSC']
 
     async def fetch(self) -> dict:
-        # TODO: 实现 MSC 页面抓取
-        # MSC 有较强的反爬，需要分析其追踪 API
-        # 暂时抛出异常，由主程序处理（显示"请前往官网"）
-        raise NotImplementedError(
-            f'MSC 抓取器尚未实现\n'
-            f'请手动前往官网查询：\n{TRACKING_URL.format(no=self.container_no)}'
-        )
+        import nodriver as uc
+        browser = await uc.start(headless=False, browser_args=['--window-size=400,300', '--window-position=99999,99999'])
+        try:
+            tab = await browser.get(TRACKING_URL)
+            await self._wait_for(tab, '#trackingNumber')
+            # MSC 的查询表单由 Alpine 驱动，原生 input 事件会同步其状态。
+            await tab.evaluate(f'''(() => {{
+                const input = document.querySelector('#trackingNumber');
+                if (!input) throw new Error('MSC tracking form not found');
+                Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '{self.container_no}');
+                input.dispatchEvent(new Event('input', {{bubbles: true}}));
+                document.querySelector('form.js-form').requestSubmit();
+            }})()''')
+            await self._wait_for(tab, '.msc-flow-tracking__details')
+            data = json.loads(await tab.evaluate(_JS))
+            if data.get('container') != self.container_no:
+                raise ValueError('MSC 页面未返回有效数据，请检查箱号或稍后重试')
+            return data
+        finally:
+            browser.stop()
 
 
 if __name__ == '__main__':

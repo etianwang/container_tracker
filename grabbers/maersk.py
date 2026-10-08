@@ -7,29 +7,34 @@ Maersk Line 抓取器
 """
 
 import asyncio
+import json
 from .base import BaseGrabber
 
 TRACKING_URL = 'https://www.maersk.com/tracking/{no}'
-WAIT_SECONDS = 10   # 等待页面渲染秒数，可根据网速调整
 
-_JS = '''(() => {
+_JS = '''JSON.stringify((() => {
     const q  = s => document.querySelector(s);
     const qa = s => Array.from(document.querySelectorAll(s));
+    const text = (root, selector) => root?.querySelector(selector)?.innerText.trim() || '';
 
-    const events = qa('[data-test^="transport-plan-item"]').map(el => ({
-        loc:       el.querySelector('[data-test="location-name"]')?.innerText.trim() || "",
-        milestone: el.querySelector('[data-test="milestone"]')?.innerText.trim() || ""
+    const events = qa('[data-test="container-event-row"]').map(row => ({
+        loc: '', milestone: text(row, '[data-test="event-name"]') + "\\n" + text(row, '[data-test="event-date"]')
     }));
+    const current = q('[data-test="container-event-current"]');
+    if (current) events.push({
+        loc: text(current, '[data-test="event-location-city"]'),
+        milestone: text(current, '[data-test="event-name"]') + "\\n" + text(current, '[data-test="event-date"]')
+    });
 
     return {
-        container: q('[data-test="transport-doc-value"]')?.innerText.trim() || "",
-        from_port: q('[data-test="track-from-value"]')?.innerText.trim() || "",
-        to_port:   q('[data-test="track-to-value"]')?.innerText.trim() || "",
-        updated:   q('[data-test="last-updated"]')?.innerText.trim() || "",
-        status:    q('[data-test="container-location"]')?.innerText.trim() || "",
+        container: text(document, '[data-test="ocean-design-bl-value"]'),
+        from_port: text(document, '[data-test="accordion-departure-city"]'),
+        to_port:   text(document, '[data-test="accordion-arrival-city"]'),
+        updated:   text(document, '[data-test="container-last-updated"]'),
+        status:    text(q('[data-test="container-event-current"]'), '[data-test="event-name"]'),
         events
     };
-})()'''
+})())'''
 
 
 class MaerskGrabber(BaseGrabber):
@@ -55,11 +60,11 @@ class MaerskGrabber(BaseGrabber):
         try:
             s('⟳ 正在打开 Maersk 追踪页...')
             tab = await browser.get(url)
-            s('⟳ 等待页面渲染（约10秒）...')
-            await tab.sleep(WAIT_SECONDS)
+            s('⟳ 等待页面渲染...')
+            await self._wait_for(tab, '[data-test="ocean-design-bl-value"]')
+            await tab.evaluate('document.querySelector("[data-test=completed-events-toggle]")?.click()')
             s('⟳ 正在提取运踪数据...')
-            raw  = await tab.evaluate(_JS)
-            data = self._parse_nodriver(raw)
+            data = json.loads(await tab.evaluate(_JS))
 
             if not data.get('container'):
                 raise ValueError('页面未返回有效数据，请检查箱号或稍后重试')

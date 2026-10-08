@@ -3,7 +3,7 @@ Honsen Africa — Container Tracker Desktop
 主界面入口
 
 依赖: pip install PyQt6 nodriver
-运行: python main.py
+运行: py -3.12 main.py（需要 PyQt6 与 nodriver）
 """
 
 import sys
@@ -13,7 +13,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QPushButton, QLabel, QScrollArea, QFrame,
-    QStackedWidget, QTextEdit, QDialog, QDialogButtonBox, QMessageBox
+    QStackedWidget, QTextEdit, QDialog, QDialogButtonBox, QMessageBox, QComboBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QPalette, QCursor
@@ -51,6 +51,13 @@ QLineEdit#searchInput {{
     letter-spacing:2px; height:40px;
 }}
 QLineEdit#searchInput:focus {{ border-color:{ACCENT}; }}
+QComboBox#carrierSelect {{
+    background:{BG}; border:1px solid {BORDER}; border-radius:6px;
+    color:{TEXT}; padding:0 10px; font-size:12px; height:40px;
+}}
+QComboBox#carrierSelect:focus {{ border-color:{ACCENT}; }}
+QComboBox#carrierSelect::drop-down {{ border:none; width:22px; }}
+QComboBox#carrierSelect QAbstractItemView {{ background:{PANEL}; color:{TEXT}; selection-background-color:{PANEL2}; }}
 
 QPushButton#trackBtn {{
     background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 {ACCENT},stop:1 #ea6c00);
@@ -124,22 +131,25 @@ class FetchWorker(QThread):
     error  = pyqtSignal(str)
     status = pyqtSignal(str)
 
-    def __init__(self, no: str):
+    def __init__(self, no: str, carrier_override: tuple[str, str] | None = None):
         super().__init__()
         self.no = no
+        self.carrier_override = carrier_override
 
     def run(self):
-        cached = cache.get(self.no)
+        cached = None if self.carrier_override else cache.get(self.no)
         if cached:
             self.result.emit(cached)
             return
 
-        grabber_name = carriers.get_grabber_name(self.no)
+        carrier_name, grabber_name = self.carrier_override or (
+            carriers.get_carrier_name(self.no), carriers.get_grabber_name(self.no)
+        )
         if not grabber_name:
             self.error.emit(f'未识别的承运商前缀：{self.no[:4]}\n请手动前往官网查询。')
             return
 
-        grabber = get_grabber(grabber_name, self.no)
+        grabber = get_grabber(grabber_name, self.no, carrier_name)
         grabber.on_status = lambda msg: self.status.emit(msg)  # 注入状态回调
         if not grabber:
             self.error.emit(f'{grabber_name} 抓取器尚未实现\n可在 grabbers/{grabber_name}.py 中添加。')
@@ -148,7 +158,10 @@ class FetchWorker(QThread):
         self.status.emit(f'⟳ 正在启动 {grabber_name} 抓取器...')
         try:
             data = asyncio.run(grabber.fetch())
-            cache.set(self.no, data)
+            if self.carrier_override:
+                data['carrier'] = carrier_name
+            if not data.pop('_skip_cache', False):
+                cache.set(self.no, data)
             data['_cached'] = False
             self.result.emit(data)
         except NotImplementedError as e:
@@ -364,6 +377,15 @@ class MainWindow(QMainWindow):
         self.search_input.textChanged.connect(self._on_input_change)
         lay.addWidget(self.search_input, 1)
 
+        self.carrier_select = QComboBox()
+        self.carrier_select.setObjectName('carrierSelect')
+        self.carrier_select.setFixedWidth(165)
+        self.carrier_select.addItem('自动识别', None)
+        for name, grabber_name in carriers.get_carrier_options():
+            self.carrier_select.addItem(name, (name, grabber_name))
+        self.carrier_select.currentIndexChanged.connect(self._on_carrier_change)
+        lay.addWidget(self.carrier_select)
+
         self.badge = QLabel(); self.badge.setVisible(False)
         self.badge.setStyleSheet(f"background:rgba(56,189,248,0.08);"
                                  f"border:1px solid rgba(56,189,248,0.3);"
@@ -426,8 +448,9 @@ class MainWindow(QMainWindow):
         il.addWidget(self._lbl('CONTAINER TRACKER',
             f"font-size:20px; font-weight:bold; color:{DIM}; letter-spacing:4px;", center=True))
         il.addWidget(self._lbl(
-            '输入集装箱号，自动识别承运商并抓取追踪数据\n'
+            '输入集装箱号，自动识别承运商并查询追踪数据\n'
             '■ 本地缓存 12 小时，重复查询秒出结果\n'
+            '■ 暂不支持自动解析的航司将打开其官网追踪页\n'
             '■ 完整运踪时间轴，港口、船名、时间一览\n'
             '■ 历史记录 + 备注，随时查阅',
             f"font-size:11px; color:{DIM};", center=True))
@@ -507,7 +530,21 @@ class MainWindow(QMainWindow):
 
     # ── 搜索 ─────────────────────────────────────
     def _on_input_change(self, text):
+        self._update_carrier_badge(text)
+
+    def _on_carrier_change(self, _index):
+        self._update_carrier_badge(self.search_input.text())
+
+    def _update_carrier_badge(self, text):
         no = text.strip().upper()
+        manual = self.carrier_select.currentData()
+        if manual:
+            self.badge.setText(f'手动：{manual[0]}')
+            self.badge.setStyleSheet(f"background:rgba(249,115,22,0.08);"
+                f"border:1px solid rgba(249,115,22,0.3); color:{ACCENT};"
+                f"border-radius:4px; padding:2px 10px; font-size:11px; font-family:'Courier New';")
+            self.badge.setVisible(True)
+            return
         if len(no) < 4:
             self.badge.setVisible(False); return
         name = carriers.get_carrier_name(no)
@@ -524,12 +561,18 @@ class MainWindow(QMainWindow):
         self.badge.setVisible(True)
 
     def _do_track(self):
-        no = self.search_input.text().strip().upper().replace(' ', '')
-        if not no: self.search_input.setFocus(); return
+        try:
+            no = carriers.normalize_container_no(self.search_input.text())
+        except ValueError as e:
+            self._on_error(str(e))
+            self.search_input.setFocus()
+            return
 
-        carrier_name = carriers.get_carrier_name(no)
-        history.add(no, carrier_name)
-        self._refresh_history()
+        carrier_override = self.carrier_select.currentData()
+        carrier_name = carrier_override[0] if carrier_override else carriers.get_carrier_name(no)
+        if not carrier_override and carrier_name == '未知承运商':
+            self._on_error(f'未识别的承运商前缀：{no[:4]}\n请前往官网查询。')
+            return
 
         self.stack.setCurrentIndex(1)
         self.loading_lbl.setText(
@@ -540,13 +583,15 @@ class MainWindow(QMainWindow):
         if self._worker and self._worker.isRunning():
             self._worker.terminate(); self._worker.wait()
 
-        self._worker = FetchWorker(no)
+        self._worker = FetchWorker(no, carrier_override)
         self._worker.result.connect(self._on_result)
         self._worker.error.connect(self._on_error)
         self._worker.status.connect(lambda s: self._set_status(s, CYAN))
         self._worker.start()
 
     def _on_result(self, data):
+        history.add(data.get('container', ''), data.get('carrier') or carriers.get_carrier_name(data.get('container', '')))
+        self._refresh_history()
         self._render_result(data)
         no = data.get('container', '')
         suffix = ' （缓存）' if data.get('_cached') else ''
@@ -584,7 +629,7 @@ class MainWindow(QMainWindow):
         no_lbl.setStyleSheet(f"color:{ACCENT}; font-family:'Courier New';"
                              f"font-size:20px; font-weight:bold; letter-spacing:3px;")
         hl.addWidget(no_lbl)
-        c_lbl = QLabel(carriers.get_carrier_name(no))
+        c_lbl = QLabel(data.get('carrier') or carriers.get_carrier_name(no))
         c_lbl.setStyleSheet(f"color:{MUTED}; font-size:13px;")
         hl.addWidget(c_lbl)
         if cached:
@@ -691,15 +736,7 @@ class MainWindow(QMainWindow):
 
     def _open_web(self, no):
         import webbrowser
-        prefix = no[:4].upper()
-        url_map = {
-            'MSKU': f'https://www.maersk.com/tracking/{no}',
-            'MRKU': f'https://www.maersk.com/tracking/{no}',
-            'MSCU': f'https://www.msc.com/en/track-a-shipment?agencyPath=civ&trackingNumber={no}',
-            'CMDU': f'https://www.cma-cgm.com/ebusiness/tracking/search?SearchViewModel.Reference={no}',
-            'COSU': f'https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number={no}',
-        }
-        webbrowser.open(url_map.get(prefix, f'https://www.maersk.com/tracking/{no}'))
+        webbrowser.open(carriers.get_tracking_url(no) or 'https://www.google.com/search?q=' + no)
 
     def _force_refresh(self, no):
         cache.delete(no); self.search_input.setText(no); self._do_track()

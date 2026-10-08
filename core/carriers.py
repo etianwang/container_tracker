@@ -5,6 +5,9 @@ value : (承运商全称, 抓取器名称)
         抓取器名称对应 grabbers/ 目录下的模块名
 """
 
+import re
+
+
 CARRIER_MAP = {
     # ── Maersk Group ──
     "MSKU": ("Maersk Line",          "maersk"),
@@ -43,6 +46,10 @@ CARRIER_MAP = {
 
     # ── Hapag-Lloyd ──
     "HLCU": ("Hapag-Lloyd",          "hapag"),
+    "HLXU": ("Hapag-Lloyd",          "hapag"),
+
+    # ── ONE ──
+    "ONEU": ("ONE",                  "one"),
 
     # ── ZIM ──
     "ZIMU": ("ZIM",                  "zim"),
@@ -67,6 +74,32 @@ CARRIER_MAP = {
     "SEKU": ("Seaco",                "maersk"),
 }
 
+TRACKING_URLS = {
+    'maersk':   'https://www.maersk.com/tracking/{no}',
+    'msc':      'https://www.msc.com/en/track-a-shipment?agencyPath=civ&trackingNumber={no}',
+    'cmacgm':   'https://www.cma-cgm.com/ebusiness/tracking/search?SearchViewModel.Reference={no}',
+    'cosco':    'https://elines.coscoshipping.com/ebusiness/cargoTracking?trackingType=CONTAINER&number={no}',
+    'hmm':      'https://www.hmm21.com/e-service/general/trackNTrace/TrackNTrace.do',
+    'evergreen':'https://ct.shipmentlink.com/servlet/TDB1_CargoTracking.do',
+    'yangming': 'https://www.yangming.com/en/esolution/tracking/cargo_tracking',
+    'oocl':     'https://www.oocl.com/eng/ourservices/eservices/cargotracking/Pages/cargotracking.aspx',
+    'hapag':    'https://www.hapag-lloyd.com/en/online-business/track/track-by-container-solution.html?container={no}',
+    'one':      'https://ecomm.one-line.com/one-ecom/manage-shipment/cargo-tracking?searchType=CONTAINER&searchValue={no}',
+    'zim':      'https://www.zim.com/tools/track-a-shipment',
+    'pil':      'https://www.pilship.com/en-our-track-and-trace-pil-pacific-international-lines/',
+    'wanhai':   'https://www.wanhai.com/views/cargoTrack/CargoTrack.xhtml',
+}
+
+CONTAINER_RE = re.compile(r'^[A-Z]{4}\d{7}$')
+
+
+def normalize_container_no(value: str) -> str:
+    """Normalize and validate an ISO container number's basic format."""
+    no = re.sub(r'\s+', '', value).upper()
+    if not CONTAINER_RE.fullmatch(no):
+        raise ValueError('箱号格式应为 4 个字母加 7 个数字，例如 MRSU6845613。')
+    return no
+
 
 def get_carrier_name(container_no: str) -> str:
     """根据箱号返回承运商名称"""
@@ -80,3 +113,17 @@ def get_grabber_name(container_no: str) -> str:
     prefix = container_no[:4].upper() if len(container_no) >= 4 else ''
     info = CARRIER_MAP.get(prefix)
     return info[1] if info else None
+
+
+def get_carrier_options() -> list[tuple[str, str]]:
+    """Return selectable carrier names and their grabber identifiers."""
+    seen = set()
+    return [info for info in CARRIER_MAP.values()
+            if not (info in seen or seen.add(info))]
+
+
+def get_tracking_url(container_no: str, grabber_name: str | None = None) -> str | None:
+    """Return the carrier's official tracking URL for a recognized container."""
+    name = grabber_name or get_grabber_name(container_no)
+    template = TRACKING_URLS.get(name)
+    return template.format(no=container_no.upper()) if template else None

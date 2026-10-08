@@ -21,6 +21,8 @@
 """
 
 from abc import ABC, abstractmethod
+import json
+import time
 
 
 class BaseGrabber(ABC):
@@ -52,6 +54,16 @@ class BaseGrabber(ABC):
             'updated':   '',
             'events':    []
         }
+
+    @staticmethod
+    async def _wait_for(tab, selector: str, timeout: float = 20) -> None:
+        deadline = time.monotonic() + timeout
+        probe = f'Boolean(document.querySelector({json.dumps(selector)}))'
+        while time.monotonic() < deadline:
+            if await tab.evaluate(probe):
+                return
+            await tab.sleep(0.5)
+        raise TimeoutError(f'等待页面元素超时：{selector}')
 
     @staticmethod
     def _parse_nodriver(raw: list) -> dict:

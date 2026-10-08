@@ -35,7 +35,6 @@ def save(arr: list):
 
 
 def add(container_no: str, carrier: str):
-    print(f"history.add called, saving to: {HIST_FILE}")
     arr = [h for h in load() if h['no'] != container_no]
     arr.insert(0, {
         'id':      int(datetime.now().timestamp() * 1000),
