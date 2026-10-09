@@ -27,6 +27,44 @@ def log_failure(container, carrier, started, error, stderr):
     )
 
 
+def run_group(container, carriers, timeout):
+    """Run a carrier group concurrently and return its first valid payload."""
+    env = {**__import__('os').environ, 'TRACKER_TIMEOUT_SECONDS': '22',
+           'TRACKER_HEADLESS': '1' if sys.platform != 'win32' else '0'}
+    processes = {
+        carrier: subprocess.Popen(
+            [sys.executable, str(Path(__file__).with_name('tracker_cli.py')), container, carrier],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', env=env,
+        ) for carrier in carriers
+    }
+    deadline = time.monotonic() + timeout
+    failures, stderr = [], ''
+    try:
+        while processes and time.monotonic() < deadline:
+            for carrier, process in list(processes.items()):
+                if process.poll() is None:
+                    continue
+                stdout, error = process.communicate()
+                del processes[carrier]
+                stderr += error
+                line = next((line[13:] for line in stdout.splitlines() if line.startswith('TRACKER_JSON=')), '')
+                payload = json.loads(line) if line else {'ok': False}
+                if payload.get('ok'):
+                    return payload['result'], failures, stderr
+                failures.append(carrier)
+            time.sleep(.1)
+        failures.extend(processes)
+        return None, failures, stderr
+    finally:
+        for process in processes.values():
+            process.terminate()
+        for process in processes.values():
+            try:
+                process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+
+
 def main(db_path, job_id):
     db = sqlite3.connect(db_path)
     row = None
@@ -39,22 +77,20 @@ def main(db_path, job_id):
         update(db, job_id, 'running')
         candidates = json.loads(row[2]) if row[2] else [row[1]]
         failures = []
-        for carrier in candidates:
-            if time.monotonic() - started > 55:
-                break
-            command = [sys.executable, str(Path(__file__).with_name('tracker_cli.py')), row[0], carrier]
-            completed = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=25,
-                                       env={**__import__('os').environ, 'TRACKER_TIMEOUT_SECONDS': '22',
-                                            'TRACKER_HEADLESS': '1' if sys.platform != 'win32' else '0'})
-            stderr += completed.stderr
-            line = next((line[13:] for line in completed.stdout.splitlines() if line.startswith('TRACKER_JSON=')), '')
-            payload = json.loads(line) if line else {'ok': False}
-            if payload.get('ok'):
-                db.execute('UPDATE jobs SET carrier_name=? WHERE id=?', (payload['result'].get('carrier', carrier), job_id))
+        groups = [[carrier for carrier in candidates if carrier != '17track']]
+        if '17track' in candidates:
+            groups.append(['17track'])
+        for carriers in groups:
+            if not carriers or time.monotonic() - started > 55:
+                continue
+            payload, failed, output = run_group(row[0], carriers, min(25, 55 - (time.monotonic() - started)))
+            stderr += output
+            failures.extend(failed)
+            if payload:
+                db.execute('UPDATE jobs SET carrier_name=? WHERE id=?', (payload.get('carrier', carriers[0]), job_id))
                 db.commit()
-                update(db, job_id, 'done', payload['result'])
+                update(db, job_id, 'done', payload)
                 return
-            failures.append(carrier)
         raise RuntimeError('未找到可查询结果：' + ', '.join(failures))
     except Exception as exc:
         if row:

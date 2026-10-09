@@ -158,9 +158,8 @@ if (isset($_GET['action'])) {
                     $candidates = [$key];
                 } else {
                     $live = ['maersk', 'msc', 'cosco'];
-                    $candidates = track17_token() !== '' && !in_array($key, $live, true)
-                        ? ['17track', ...$live]
-                        : array_values(array_unique(array_filter([$key, ...$live], fn($item) => in_array($item, $live, true))));
+                    $candidates = array_values(array_unique(array_filter([$key, ...$live], fn($item) => in_array($item, $live, true))));
+                    if (track17_token() !== '') $candidates[] = '17track';
                     $key = $candidates[0];
                 }
             } else {
