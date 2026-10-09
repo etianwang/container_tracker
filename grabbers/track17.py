@@ -73,10 +73,14 @@ class Track17Grabber(BaseGrabber):
         item = {'number': self.container_no, 'lang': 'zh-hans'}
         if code := CARRIER_CODES.get(self.container_no[:4]):
             item['carrier'] = code
+        details = _post('gettrackinfo', [item])
+        if accepted := (details.get('accepted') or []):
+            return self.parse(self.container_no, accepted[0])
         registered = _post('register', [item])
         rejected = (registered.get('rejected') or [{}])[0].get('error', {}).get('code')
         if not registered.get('accepted') and rejected != -18019901:
             raise ValueError('17TRACK 未识别该箱号。')
         details = _post('gettrackinfo', [item])
-        accepted = (details.get('accepted') or [{}])[0]
-        return self.parse(self.container_no, accepted)
+        if not (accepted := (details.get('accepted') or [])):
+            raise RuntimeError('17TRACK 正在同步运踪信息，请稍后重试。')
+        return self.parse(self.container_no, accepted[0])

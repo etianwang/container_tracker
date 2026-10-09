@@ -18,17 +18,25 @@ def test_parse():
     assert result['from_port'] == 'Shanghai, CN' and result['status'] == '运输中'
 
 
-def test_already_registered_is_not_an_error():
+def test_existing_tracking_never_reregisters():
+    with patch('grabbers.track17._post', return_value={'accepted': [{'track_info': {'latest_status': {'status': 'NotFound'}, 'tracking': {'providers': []}}}]}) as post:
+        result = asyncio.run(Track17Grabber('CMAU3453875').fetch())
+    assert result['status'] == 'NotFound' and post.call_args.args[0] == 'gettrackinfo'
+
+
+def test_missing_tracking_registers_once():
     responses = [
-        {'accepted': [], 'rejected': [{'error': {'code': -18019901}}]},
+        {'accepted': [], 'rejected': []},
+        {'accepted': [{'number': 'CMAU3453875'}], 'rejected': []},
         {'accepted': [{'track_info': {'latest_status': {'status': 'NotFound'}, 'tracking': {'providers': []}}}]},
     ]
-    with patch('grabbers.track17._post', side_effect=responses):
-        result = asyncio.run(Track17Grabber('CMAU3453875').fetch())
-    assert result['status'] == 'NotFound'
+    with patch('grabbers.track17._post', side_effect=responses) as post:
+        asyncio.run(Track17Grabber('CMAU3453875').fetch())
+    assert [call.args[0] for call in post.call_args_list] == ['gettrackinfo', 'register', 'gettrackinfo']
 
 
 if __name__ == '__main__':
     test_parse()
-    test_already_registered_is_not_an_error()
+    test_existing_tracking_never_reregisters()
+    test_missing_tracking_registers_once()
     print('ok')
