@@ -12,6 +12,7 @@ REGISTRY = {
     'msc':       'grabbers.msc',
     'cosco':     'grabbers.cosco',
     'oocl':      'grabbers.oocl',
+    '17track':   'grabbers.track17',
 }
 
 

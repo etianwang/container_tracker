@@ -23,6 +23,7 @@ CARRIER_MAP = {
 
     # ── CMA CGM ──
     "CMDU": ("CMA CGM",              "cmacgm"),
+    "CMAU": ("CMA CGM",              "cmacgm"),
     "APZU": ("APL (CMA CGM)",        "cmacgm"),
 
     # ── COSCO ──

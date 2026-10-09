@@ -12,6 +12,7 @@ def test_container_helpers():
     assert carriers.get_tracking_url('MSCU1234567').endswith('MSCU1234567')
     assert carriers.get_grabber_name('HLXU1234567') == 'hapag'
     assert carriers.get_grabber_name('ONEU1234567') == 'one'
+    assert carriers.get_grabber_name('CMAU1234567') == 'cmacgm'
     assert carriers.get_tracking_url('ZIMU1234567').startswith('https://www.zim.com/')
     assert ('MSC', 'msc') in carriers.get_carrier_options()
     assert carriers.get_tracking_url('ABCD1234567', 'msc').endswith('ABCD1234567')

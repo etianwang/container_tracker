@@ -18,7 +18,7 @@ $carriers = [
 $prefixes = [
     'MSKU'=>['Maersk Line','maersk'], 'MRKU'=>['Maersk Line','maersk'], 'MRSU'=>['Maersk Line','maersk'],
     'SUDU'=>['Hamburg Sud (Maersk)','maersk'], 'SEAU'=>['Sealand (Maersk)','maersk'], 'TEMU'=>['Textainer / Maersk','maersk'],
-    'MSCU'=>['MSC','msc'], 'MEDU'=>['MSC','msc'], 'CMDU'=>['CMA CGM','cmacgm'], 'APZU'=>['APL (CMA CGM)','cmacgm'],
+    'MSCU'=>['MSC','msc'], 'MEDU'=>['MSC','msc'], 'CMDU'=>['CMA CGM','cmacgm'], 'CMAU'=>['CMA CGM','cmacgm'], 'APZU'=>['APL (CMA CGM)','cmacgm'],
     'COSU'=>['COSCO Shipping','cosco'], 'CCLU'=>['COSCO (CCL)','cosco'], 'CSNU'=>['COSCO / Sealand','cosco'],
     'HDMU'=>['HMM','hmm'], 'EGLV'=>['Evergreen','evergreen'], 'UETU'=>['Evergreen','evergreen'],
     'YMLU'=>['Yang Ming','yangming'], 'OOLU'=>['OOCL','oocl'], 'OOCU'=>['OOCL','oocl'],
@@ -55,6 +55,10 @@ function history(): array {
 function python_bin(): string {
     if (PHP_OS_FAMILY === 'Windows') return 'py -3.12';
     return escapeshellcmd(getenv('TRACKER_PYTHON') ?: 'python3.12');
+}
+
+function track17_token(): string {
+    return trim((string) (getenv('TRACK17_TOKEN') ?: @file_get_contents(__DIR__ . '/data/17track.key')));
 }
 
 function queue_job(string $container, string $carrier, string $carrier_name, array $candidates): string {
@@ -149,7 +153,9 @@ if (isset($_GET['action'])) {
                     $candidates = [$key];
                 } else {
                     $live = ['maersk', 'msc', 'cosco'];
-                    $candidates = array_values(array_unique(array_filter([$key, ...$live], fn($item) => in_array($item, $live, true))));
+                    $candidates = track17_token() !== '' && !in_array($key, $live, true)
+                        ? ['17track', ...$live]
+                        : array_values(array_unique(array_filter([$key, ...$live], fn($item) => in_array($item, $live, true))));
                     $key = $candidates[0];
                 }
             } else {

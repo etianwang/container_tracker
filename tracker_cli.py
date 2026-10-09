@@ -58,7 +58,7 @@ def translate_result(result: dict) -> dict:
 
 async def track(container_no: str, carrier: str) -> dict:
     grabber = get_grabber(carrier, container_no)
-    if carrier not in {'maersk', 'msc', 'cosco', 'oocl'} or getattr(grabber, 'NAME', None) != carrier:
+    if carrier not in {'maersk', 'msc', 'cosco', 'oocl', '17track'} or getattr(grabber, 'NAME', None) != carrier:
         raise ValueError('该承运商尚未接入站内实时查询。')
     with contextlib.redirect_stdout(sys.stderr):
         return translate_result(await grabber.fetch())
