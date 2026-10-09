@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 const DB_FILE = __DIR__ . '/data/tracker.sqlite';
 const CACHE_TTL = 43200;
+const TRACK17_CACHE_TTL = 86400;
 const MAX_HISTORY = 60;
 
 $carriers = [
@@ -59,6 +60,10 @@ function python_bin(): string {
 
 function track17_token(): string {
     return trim((string) (getenv('TRACK17_TOKEN') ?: @file_get_contents(__DIR__ . '/data/17track.key')));
+}
+
+function cache_ttl(string $carrier): int {
+    return $carrier === '17track' ? TRACK17_CACHE_TTL : CACHE_TTL;
 }
 
 function queue_job(string $container, string $carrier, string $carrier_name, array $candidates): string {
@@ -128,7 +133,7 @@ function tracker_result(string $container, string $carrier): array {
         throw new RuntimeException('实时查询失败，请稍后重试。');
     }
     $result = $payload['result'];
-    db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$cache_key, json_encode($result, JSON_UNESCAPED_UNICODE), time() + CACHE_TTL]);
+    db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$cache_key, json_encode($result, JSON_UNESCAPED_UNICODE), time() + cache_ttl($carrier)]);
     return $result + ['cached' => false];
 }
 
@@ -182,7 +187,7 @@ if (isset($_GET['action'])) {
             if ($job['status'] === 'done' && !$job['recorded']) {
                 db()->prepare('UPDATE jobs SET recorded=1 WHERE id=? AND recorded=0')->execute([$id]);
                 add_history($job['container'], $job['carrier_name']);
-                db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$job['carrier'] . '-v4-' . $job['container'], $job['payload'], time() + CACHE_TTL]);
+                db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$job['carrier'] . '-v4-' . $job['container'], $job['payload'], time() + cache_ttl($job['carrier'])]);
             }
             json_response(['job' => ['status' => $job['status'], 'result' => $job['payload'] ? json_decode($job['payload'], true) : null, 'error' => $job['error']]]);
         }
