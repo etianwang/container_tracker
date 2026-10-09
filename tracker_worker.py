@@ -50,7 +50,9 @@ def run_group(container, carriers, timeout):
                 line = next((line[13:] for line in stdout.splitlines() if line.startswith('TRACKER_JSON=')), '')
                 payload = json.loads(line) if line else {'ok': False}
                 if payload.get('ok'):
-                    return payload['result'], failures, stderr
+                    result = payload['result']
+                    result['_source'] = carrier
+                    return result, failures, stderr
                 failures.append(carrier)
             time.sleep(.1)
         failures.extend(processes)

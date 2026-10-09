@@ -43,9 +43,9 @@ def test_queries_carriers_together_then_falls_back():
         finally:
             tracker_worker.subprocess.Popen = original
         verify = sqlite3.connect(db_path)
-        row = verify.execute('SELECT status, carrier_name FROM jobs WHERE id="job"').fetchone()
+        row = verify.execute('SELECT status, carrier_name, payload FROM jobs WHERE id="job"').fetchone()
         verify.close()
-        assert calls == ['maersk', 'msc'] and row == ('done', 'MSC')
+        assert calls == ['maersk', 'msc'] and row[:2] == ('done', 'MSC') and json.loads(row[2])['_source'] == 'msc'
 
 
 if __name__ == '__main__':

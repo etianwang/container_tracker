@@ -186,7 +186,8 @@ if (isset($_GET['action'])) {
             if ($job['status'] === 'done' && !$job['recorded']) {
                 db()->prepare('UPDATE jobs SET recorded=1 WHERE id=? AND recorded=0')->execute([$id]);
                 add_history($job['container'], $job['carrier_name']);
-                db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$job['carrier'] . '-v4-' . $job['container'], $job['payload'], time() + cache_ttl($job['carrier'])]);
+                $payload = json_decode($job['payload'], true) ?: [];
+                db()->prepare('INSERT OR REPLACE INTO cache (cache_key, payload, expires_at) VALUES (?, ?, ?)')->execute([$job['carrier'] . '-v4-' . $job['container'], $job['payload'], time() + cache_ttl($payload['_source'] ?? $job['carrier'])]);
             }
             json_response(['job' => ['status' => $job['status'], 'result' => $job['payload'] ? json_decode($job['payload'], true) : null, 'error' => $job['error']]]);
         }
